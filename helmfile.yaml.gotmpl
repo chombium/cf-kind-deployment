@@ -44,9 +44,7 @@ releases:
           - |
             echo "Waiting for nodes to become ready after CNI installation..."
             kubectl wait --for=condition=Ready nodes --all --timeout=300s
-            echo "Applying taints to workload nodes..."
-            kubectl taint nodes -l cloudfoundry.org/cell=true cloudfoundry.org/cell=true:NoSchedule --overwrite || true
-            kubectl cluster-info
+
             corefile=$(kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' | sed '/kubernetes/i \
                 rewrite name regex (.*)\\.127-0-0-1\\.nip\\.io istio-gateway-istio.default.svc.cluster.local answer auto\
             ')
@@ -54,35 +52,27 @@ releases:
               -p="$(jq -n --arg cf "$corefile" '[{"op":"replace","path":"/data/Corefile","value":$cf}]')"
             kubectl -n kube-system rollout restart deployment/coredns
 
-  - name: cert-manager
-    namespace: cert-manager
-    chart: jetstack/cert-manager
-    version: v1.19.2
-    values:
-      - crds:
-          enabled: true
-    hooks:
-      - events: ["postsync"]
-        showlogs: true
-        command: "/bin/sh"
-        args:
-          - "-c"
-          - |
-            kubectl create configmap ca --namespace default --from-file {{ .Values.certsDir }}/ca.crt --dry-run=client -o yaml | kubectl apply -f -
-            kubectl create secret generic instance-identity --namespace default --from-file=tls.crt={{ .Values.certsDir }}/ca.crt --from-file=tls.key={{ .Values.certsDir }}/ca.key --dry-run=client -o yaml | kubectl apply -f -
-            kubectl create secret generic root-ca --namespace default --from-file=tls.crt={{ .Values.certsDir }}/ca.crt --from-file=tls.key={{ .Values.certsDir }}/ca.key --dry-run=client -o yaml | kubectl apply -f -
-            kubectl create secret generic root-ca --namespace cert-manager --from-file=tls.crt={{ .Values.certsDir }}/ca.crt --from-file=tls.key={{ .Values.certsDir }}/ca.key --dry-run=client -o yaml | kubectl apply -f -
-            kubectl apply --filename assets/network-policy.yaml
-            kubectl apply --filename assets/cluster-issuer.yaml
-            kubectl apply --filename assets/nats-certificate.yaml
-            kubectl apply --filename assets/postgres-tls.yaml
+  - name: base
+    namespace: default
+    chart: ./assets/base-chart
+    needs:
+      - kube-system/cilium
+    set:
+      - name: caCert
+        file: {{ .Values.certsDir }}/ca.crt
+      - name: caKey
+        file: {{ .Values.certsDir }}/ca.key
+      - name: tlsCert
+        file: {{ .Values.certsDir }}/all-in-one.crt
+      - name: tlsKey
+        file: {{ .Values.certsDir }}/all-in-one.key
 
   - name: nats
     namespace: default
     chart: nats/nats
     version: 2.12.4
     needs:
-      - cert-manager/cert-manager
+      - default/base
     values:
       - ./assets/values/nats.yaml
 
@@ -91,7 +81,7 @@ releases:
     chart: istio/base
     version: 1.28.3
     needs:
-      - kube-system/cilium
+      - default/base
     values:
       - defaultRevision: minimal
     hooks:
@@ -109,7 +99,7 @@ releases:
     version: 1.28.3
     needs:
       - istio-base
-      - cert-manager/cert-manager
+      - default/base
     values:
       - ./assets/values/istiod.yaml
     hooks:
@@ -133,7 +123,7 @@ releases:
     chart: bitnami/postgresql
     version: 16.7.27
     needs:
-      - cert-manager/cert-manager
+      - default/base
     values:
       - ./assets/values/postgresql.yaml
       - auth:
@@ -143,6 +133,8 @@ releases:
     namespace: default
     chart: bitnami/minio
     version: 17.0.21
+    needs:
+      - default/base
     values:
       - extraEnvVars:
           - name: MINIO_DOMAIN
@@ -162,25 +154,33 @@ releases:
     namespace: default
     chart: ./releases/loggregator-agent/helm
     needs:
-      - cert-manager/cert-manager
       - istio-system/istiod
     values:
       - syslogBindingCache:
           enabled: true
+          certificateSecret: all-in-one-tls
       - forwarderAgent:
           enabled: true
+          certificateSecret: all-in-one-tls
+      - loggregatorAgent:
+          certificateSecret: all-in-one-tls
+      - syslogAgent:
+          certificateSecret: all-in-one-tls
 
   - name: gorouter
     namespace: default
     chart: ./releases/routing/helm
     needs:
-      - cert-manager/cert-manager
       - istio-system/istiod
     values:
       - routingApi:
           enabled: false
       - tcpRouter:
           enabled: false
+      - gorouter:
+          certificateSecret: all-in-one-tls
+      - udpForwarder:
+          certificateSecret: all-in-one-tls
 
   - name: tcp-routing
     namespace: default
@@ -197,33 +197,49 @@ releases:
       - routingApi:
           enabled: true
           dbPassword: {{ .Values.secrets.dbPassword }}
+          certificateSecret: all-in-one-tls
+          locketCertificateSecret: all-in-one-tls
+          loggregatorCertificateSecret: all-in-one-tls
+          uaaCertificateSecret: all-in-one-tls
       - tcpRouter:
           enabled: true
           oauthClientsSecret: {{ .Values.secrets.oauthClientsSecret }}
+          certificateSecret: all-in-one-tls
 
   - name: loggregator
     namespace: default
     chart: ./releases/loggregator/helm
     installed: {{ .Values.optionalComponents.enableLoggregator }}
     needs:
-      - cert-manager/cert-manager
       - istio-system/istiod
     values:
       - oauthClientsSecret: {{ .Values.secrets.oauthClientsSecret }}
+      - doppler:
+          certificateSecret: all-in-one-tls
+      - reverseLogProxy:
+          certificateSecret: all-in-one-tls
+      - reverseLogProxyGateway:
+          certificateSecret: all-in-one-tls
+      - trafficcontroller:
+          certificateSecret: all-in-one-tls
 
   - name: log-cache
     namespace: default
     chart: ./releases/log-cache/helm
     needs:
-      - cert-manager/cert-manager
+      - default/base
       - istio-system/istiod
       - uaa
+    values:
+      - logCacheApi:
+          certificateSecret: all-in-one-tls
+      - logCacheBackend:
+          certificateSecret: all-in-one-tls
 
   - name: uaa
     namespace: default
     chart: ./releases/uaa/helm
     needs:
-      - cert-manager/cert-manager
       - postgresql
       - istio-system/istiod
     values:
@@ -231,6 +247,7 @@ releases:
       - dbPassword: {{ .Values.secrets.dbPassword }}
       - oauthClientsSecret: {{ .Values.secrets.oauthClientsSecret }}
       - uaaAdminSecret: {{ .Values.secrets.uaaAdminSecret }}
+      - certificateSecret: all-in-one-tls
 
   - name: credhub
     namespace: default
@@ -240,6 +257,7 @@ releases:
       - postgresql
     values:
       - dbPassword: {{ .Values.secrets.dbPassword }}
+      - caCertificateSecret: all-in-one-tls
 
   - name: locket
     namespace: default
@@ -251,6 +269,7 @@ releases:
       - dbPassword: {{ .Values.secrets.dbPassword }}
       - locket:
           enabled: true
+          certificateSecret: all-in-one-tls
 
   - name: diego
     namespace: default
@@ -268,12 +287,15 @@ releases:
 {{ readFile (printf "%s/ssh_key" .Values.certsDir) | indent 10 }}
       - auctioneer:
           enabled: true
+          certificateSecret: all-in-one-tls
       - bbs:
           enabled: true
+          certificateSecret: all-in-one-tls
       - fileserver:
           enabled: true
       - sshProxy:
           enabled: true
+          certificateSecret: all-in-one-tls
 
   - name: tps-watcher
     namespace: default
@@ -283,6 +305,7 @@ releases:
     values:
       - tpsWatcher:
           enabled: true
+          certificateSecret: all-in-one-tls
       - dbPassword: ""
       - oauthClientsSecret: ""
 
@@ -301,13 +324,16 @@ releases:
       - dbPassword: ""
       - routeEmitter:
           enabled: true
-          bbsCertificateSecret: route-emitter
-          locketCertificateSecret: route-emitter
-          natsCertificateSecret: route-emitter
-          loggregatorCertificateSecret: route-emitter
+          certificateSecret: all-in-one-tls
           routingApi:
             enabled: {{ .Values.optionalComponents.enableTcpRouting }}
+            certificateSecret: all-in-one-tls
           oauthClientsSecret: {{ .Values.secrets.oauthClientsSecret }}
+          natsCertificateSecret: all-in-one-tls
+          loggregatorCertificateSecret: all-in-one-tls
+          bbsCertificateSecret: all-in-one-tls
+          locketCertificateSecret: all-in-one-tls
+          uaaCertificateSecret: all-in-one-tls
           enableInternalEmitter: {{ and .Values.optionalComponents.enablePolicySupport }}
           enableTcpEmitter: {{ .Values.optionalComponents.enableTcpRouting }}
 
@@ -326,6 +352,8 @@ releases:
           - gorouter
           - ssh-proxy
           - cf-tcp-router
+      - loggregatorCertificateSecret: all-in-one-tls
+
     hooks:
       - events: ["presync"]
         showlogs: true
@@ -349,10 +377,15 @@ releases:
     values:
       - cloudController:
           enabled: true
+          certificateSecret: all-in-one-tls
           blobstore:
             fog_connection:
               aws_secret_access_key: {{ .Values.secrets.blobstorePassword }}
           sshProxyKeyFingerprint: {{ .Values.secrets.sshProxyKeyFingerprint | quote }}
+      - ccUploader:
+          certificateSecret: all-in-one-tls
+      - udpForwarder:
+          certificateSecret: all-in-one-tls
       - dbPassword: {{ .Values.secrets.dbPassword }}
       - oauthClientsSecret: {{ .Values.secrets.oauthClientsSecret }}
 
@@ -362,6 +395,9 @@ releases:
     installed: {{ .Values.optionalComponents.enableNfsVolume }}
     needs:
       - uaa
+    values:
+      - nfsbroker:
+          certificateSecret: all-in-one-tls
 
   - name: cf-networking
     namespace: default
@@ -376,6 +412,13 @@ releases:
       - policyServer:
           dbPassword: {{ .Values.secrets.dbPassword }}
           oauthClientsSecret: {{ .Values.secrets.oauthClientsSecret }}
+          certificateSecret: all-in-one-tls
+      - serviceDiscoveryController:
+          certificateSecret: all-in-one-tls
+      - boshDnsAdapter:
+          certificateSecret: all-in-one-tls
+      - boshDns:
+          certificateSecret: all-in-one-tls
 
   - name: policy-agent
     namespace: default
@@ -385,6 +428,9 @@ releases:
     needs:
       - cf-networking
     {{ if .Values.optionalComponents.enablePolicySupport }}
+    set:
+      - name: certificateSecret
+        value: all-in-one-tls
     hooks:
       - events: ["postsync"]
         showlogs: true

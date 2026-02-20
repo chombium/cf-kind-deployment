@@ -19,7 +19,7 @@ bbs:
     imagePullPolicy: IfNotPresent
   nodeSelector: ~
   tolerations: ~
-  
+
 fileserver:
   enabled: false
   hostname: "file-server.127-0-0-1.nip.io"
@@ -41,7 +41,7 @@ locket:
     imagePullPolicy: IfNotPresent
   nodeSelector: ~
   tolerations: ~
-  
+
 sshProxy:
   enabled: false
   certificateSecret: ""
@@ -53,7 +53,7 @@ sshProxy:
     imagePullPolicy: IfNotPresent
   nodeSelector: ~
   tolerations: ~
-  
+
 routeEmitter:
   enabled: false
   certificateSecret: ""

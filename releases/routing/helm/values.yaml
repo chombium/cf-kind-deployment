@@ -21,6 +21,7 @@ udpForwarder:
 routingApi:
   enabled: true
   certificateSecret: ""
+  locketCertificateSecret: ""
   loggregatorCertificateSecret: ""
   uaaCertificateSecret: ""
   systemDomain: "127-0-0-1.nip.io"

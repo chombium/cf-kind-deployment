@@ -213,7 +213,7 @@ spec:
       volumes:
         - name: cloud-controller
           secret:
-            secretName: {{ default "cloud-controller" .Values.cloudController.certificateSecret }}
+            secretName: {{ required "cloudController.certificateSecret is required" .Values.cloudController.certificateSecret }}
         - name: etc-cloud-controller
           configMap:
             name: cloud-controller-configmap
@@ -225,34 +225,9 @@ spec:
             name: nginx-configmap
         - name: udp-forwarder
           secret:
-            secretName: udp-forwarder
+            secretName: {{ required "udpForwarder.certificateSecret is required" .Values.udpForwarder.certificateSecret }}
         - name: var-run # Share unix sockets between containers.
           emptyDir: {}
         - name: tmpdir
           emptyDir: {}
-{{- if not .Values.cloudController.certificateSecret }}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: cloud-controller
-spec:
-  secretName: cloud-controller
-  commonName: client
-  dnsNames:
-    - cloud-controller
-    - cloud-controller.{{ .Release.Namespace }}.svc
-    - cloud-controller.{{ .Release.Namespace }}.svc.cluster.local
-    - "{{ .Values.cloudController.externalDomain }}"
-  issuerRef:
-    name: ca-issuer
-    kind: ClusterIssuer
-  usages:
-    - key encipherment
-    - digital signature
-    - server auth
-    - client auth
-  privateKey:
-    rotationPolicy: Always
-{{- end }}
 {{- end }}

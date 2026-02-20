@@ -17,8 +17,6 @@
           "type": "string"
         },
         "certificateSecret": {
-          "default": "",
-          "title": "certificateSecret",
           "type": "string"
         },
         "enabled": {
@@ -146,6 +144,9 @@
         "loggregatorCertificateSecret": {
           "type": "string"
         },
+        "locketCertificateSecret": {
+          "type": "string"
+        },
         "uaaCertificateSecret": {
           "type": "string"
         },
@@ -259,8 +260,6 @@
       "additionalProperties": false,
       "properties": {
         "certificateSecret": {
-          "default": "",
-          "title": "certificateSecret",
           "type": "string"
         },
         "enabled": {
@@ -420,8 +419,6 @@
       "additionalProperties": false,
       "properties": {
         "certificateSecret": {
-          "default": "",
-          "title": "certificateSecret",
           "type": "string"
         },
         "image": {

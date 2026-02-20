@@ -48,10 +48,10 @@ spec:
       volumes:
         - name: bbs
           secret:
-            secretName: {{ default "bbs" .Values.bbs.certificateSecret }}
+            secretName: {{ required "bbs.certificateSecret is required" .Values.bbs.certificateSecret }}
         - name: postgres-tls
           secret:
-            secretName: postgres-tls
+            secretName: {{ required "bbs.certificateSecret is required" .Values.bbs.certificateSecret }}
         - name: bbs-config
           configMap:
             name: bbs-configmap
@@ -69,29 +69,4 @@ spec:
       protocol: TCP
   selector:
     app: bbs
----
-{{ if not .Values.bbs.certificateSecret }}
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: bbs
-spec:
-  secretName: bbs
-  commonName: bbs
-  dnsNames:
-    - bbs
-    - bbs.{{ .Release.Namespace }}.svc
-    - bbs.{{ .Release.Namespace }}.svc.cluster.local
-    - "{{ .Values.bbs.hostname }}"
-  issuerRef:
-    name: ca-issuer
-    kind: ClusterIssuer
-  usages:
-    - key encipherment
-    - digital signature
-    - server auth
-    - client auth
-  privateKey:
-    rotationPolicy: Always
-{{end }}
 {{- end }}
