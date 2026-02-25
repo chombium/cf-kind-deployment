@@ -83,6 +83,8 @@ spec:
           resources:
             {{- toYaml .Values.cloudController.resources | nindent 12 }}
           {{- end }}
+            - name: STORAGE_CLI_PATH
+              value: /usr/local/bin/storage-cli
           volumeMounts:
             - name: cloud-controller
               mountPath: /etc/ssl/certs/cloud-controller
@@ -120,6 +122,9 @@ spec:
           image: {{ .Values.localWorker.image.repository }}:{{ default .Chart.AppVersion .Values.localWorker.image.tag }}
           imagePullPolicy: {{ .Values.localWorker.image.imagePullPolicy }}
           command: ["bundle", "exec", "rake", "jobs:local"]
+          env:
+            - name: STORAGE_CLI_PATH
+              value: /usr/local/bin/storage-cli
           envFrom:
             - secretRef:
                 name: cc-shared

@@ -84,6 +84,7 @@ target "capi" {
 
   contexts = {
     "src" = "https://github.com/cloudfoundry/capi-release.git#${CAPI_RELEASE_VERSION}:src"
+    "storage-cli" = "https://github.com/cloudfoundry/capi-release.git#${CAPI_RELEASE_VERSION}:packages/storage-cli"
   }
 }
 
