@@ -1,0 +1,118 @@
+{{- if .Values.syslogAgent.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: syslog-agent
+  labels:
+    app: syslog-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: syslog-agent
+  template:
+    metadata:
+      labels:
+        app: syslog-agent
+    spec:
+      containers:
+        - name: syslog-agent
+          image: {{ .Values.syslogAgent.image.repository }}:{{ default .Chart.AppVersion .Values.syslogAgent.image.tag }}
+          imagePullPolicy: {{ .Values.syslogAgent.image.imagePullPolicy }}
+          ports:
+            - containerPort: 9000
+          env:
+            - name: AGENT_CA_FILE_PATH
+              value: /etc/ssl/syslog-agent/ca.crt
+            - name: AGENT_CERT_FILE_PATH
+              value:  /etc/ssl/syslog-agent/tls.crt
+            - name: AGENT_KEY_FILE_PATH
+              value: /etc/ssl/syslog-agent/tls.key
+                #   - name: AGENT_CIPHER_SUITES
+                #       value: #{p("tls.cipher_suites").split(":").join(",")}
+            - name: AGENT_PORT
+              value: #{p("port")}
+            - name: DRAIN_SKIP_CERT_VERIFY
+              value: false
+            - name: DEFAULT_DRAIN_METADATA
+              value: true
+            - name: DRAIN_TRUSTED_CA_FILE
+              value: /etc/ssl/syslog-agent/drain_ca.crt"
+            - name: BLACKLISTED_SYSLOG_RANGES
+              value: ""
+            - name: AGGREGATE_DRAIN_URLS
+              value: ""
+            - name: METRICS_PORT
+              value: "14822"
+            - name: METRICS_CA_FILE_PATH
+              value: /etc/ssl/syslog-agent/ca.crt
+            - name: METRICS_CERT_FILE_PATH
+              value: /etc/ssl/syslog-agent/tls.crt
+            - name: METRICS_KEY_FILE_PATH
+              value: /etc/ssl/syslog-agent/tls.key
+            - name: DEBUG_METRICS
+              value: false
+            - name: PPROF_PORT
+              value: "0"
+            - name: USE_RFC3339
+              value: false
+            - name: WARN_ON_INVALID_DRAINS
+              value: true
+            - name: LOGGREGATOR_AGENT_ADDR
+              value: "3458"
+          {{- if .Values.syslogAgent.resources }}
+          resources:
+            {{- toYaml .Values.syslogAgent.resources | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: syslog-agent
+              mountPath: /etc/ssl/syslog-agent
+              readOnly: true
+            - name: aggregate-drains
+              mountPath: /etc/aggregate-drains
+              readOnly: true
+      {{- if .Values.syslogAgent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.syslogAgent.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.syslogAgent.tolerations }}
+      tolerations:
+        {{- toYaml .Values.syslogAgent.tolerations | nindent 8 }}
+      {{- end }}
+      volumes:
+      - name: syslog-agent
+        secret:
+          secretName: {{ required "syslogAgent.certificateSecret is required" .Values.syslogAgent.certificateSecret }}
+      - name: aggregate-drains
+        secret:
+          secretName: aggregate-drains
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: syslog-agent
+  labels:
+    app: syslog-agent
+spec:
+  ports:
+    - port: 9000
+      name: http
+      targetPort: 9000
+      protocol: TCP
+  selector:
+    app: syslog-agent
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: syslog-agent
+spec:
+  parentRefs:
+    - name: istio-gateway
+      sectionName: syslog-agent
+  rules:
+    - backendRefs:
+      - name: syslog-agent
+        port: 9000
+{{- end }}
